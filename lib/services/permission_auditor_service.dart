@@ -2,192 +2,288 @@ import '../models/scan_models.dart';
 
 class PermissionAuditorService {
 
-  // ── Dangerous permission base scores ──────────────────────────────────────
+  // ── Only permissions that appear in Android Settings as user-toggleable ────
+  // Removed: USE_BIOMETRIC, POST_NOTIFICATIONS, INTERNET (not toggleable),
+  //          BLUETOOTH_* (shown as "Nearby devices" group, low risk for scoring)
   static const _dangerousPerms = {
-    'CAMERA':                  30,
-    'RECORD_AUDIO':            30,
-    'ACCESS_FINE_LOCATION':    25,
-    'ACCESS_COARSE_LOCATION':  15,
-    'READ_CONTACTS':           20,
-    'READ_CALL_LOG':           25,
-    'READ_SMS':                30,
-    'SEND_SMS':                20,
-    'PROCESS_OUTGOING_CALLS':  25,
-    'READ_EXTERNAL_STORAGE':   10,
-    'WRITE_EXTERNAL_STORAGE':  10,
-    'GET_ACCOUNTS':            15,
-    'USE_BIOMETRIC':           20,
-    'READ_PHONE_STATE':        15,
-    'BODY_SENSORS':            20,
-    'ACTIVITY_RECOGNITION':    15,
-    'BLUETOOTH_SCAN':          10,
-    'BLUETOOTH_CONNECT':       10,
-    'INTERNET':                 0,
+    // Camera group
+    'CAMERA':                        30,
+
+    // Microphone group
+    'RECORD_AUDIO':                  30,
+
+    // Location group
+    'ACCESS_FINE_LOCATION':          25,
+    'ACCESS_COARSE_LOCATION':        15,
+    'ACCESS_BACKGROUND_LOCATION':    20,
+
+    // Contacts group
+    'READ_CONTACTS':                 20,
+
+    // Call log group
+    'READ_CALL_LOG':                 25,
+    'PROCESS_OUTGOING_CALLS':        25,
+
+    // SMS group
+    'READ_SMS':                      30,
+    'SEND_SMS':                      20,
+    'RECEIVE_SMS':                   20,
+
+    // Phone group
+    'READ_PHONE_STATE':              15,
+    'CALL_PHONE':                    20,
+
+    // Storage — legacy Android 9–12
+    'READ_EXTERNAL_STORAGE':         10,
+    'WRITE_EXTERNAL_STORAGE':        10,
+
+    // Storage — modern Android 13+
+    'READ_MEDIA_IMAGES':             10,
+    'READ_MEDIA_VIDEO':              10,
+    'READ_MEDIA_AUDIO':              10,
+
+    // Sensors
+    'BODY_SENSORS':                  20,
+    'BODY_SENSORS_BACKGROUND':       25,
+    'ACTIVITY_RECOGNITION':          15,
+
+    // Nearby devices (lower risk, user can see in Settings)
+    'BLUETOOTH_SCAN':                 8,
+    'BLUETOOTH_CONNECT':              8,
+    'BLUETOOTH_ADVERTISE':            8,
+
+    // Accounts
+    'GET_ACCOUNTS':                  15,
+
+    // Internet: neutral for scoring but used as combo multiplier
+    'INTERNET':                       0,
   };
 
-  // ── Permission display labels ─────────────────────────────────────────────
+  // ── Human-readable labels ─────────────────────────────────────────────────
   static const _permLabels = {
-    'CAMERA':                  'Camera',
-    'RECORD_AUDIO':            'Microphone',
-    'ACCESS_FINE_LOCATION':    'Precise Location',
-    'ACCESS_COARSE_LOCATION':  'Approximate Location',
-    'READ_CONTACTS':           'Contacts',
-    'READ_CALL_LOG':           'Call Log',
-    'READ_SMS':                'SMS Read',
-    'SEND_SMS':                'SMS Send',
-    'PROCESS_OUTGOING_CALLS':  'Call Intercept',
-    'READ_EXTERNAL_STORAGE':   'Read Storage',
-    'WRITE_EXTERNAL_STORAGE':  'Write Storage',
-    'GET_ACCOUNTS':            'Account Access',
-    'USE_BIOMETRIC':           'Biometrics',
-    'READ_PHONE_STATE':        'Phone State',
-    'BODY_SENSORS':            'Body Sensors',
-    'ACTIVITY_RECOGNITION':    'Activity Recognition',
-    'BLUETOOTH_SCAN':          'Bluetooth Scan',
-    'BLUETOOTH_CONNECT':       'Bluetooth Connect',
-    'INTERNET':                'Internet',
+    'CAMERA':                    'Camera',
+    'RECORD_AUDIO':              'Microphone',
+    'ACCESS_FINE_LOCATION':      'Precise Location',
+    'ACCESS_COARSE_LOCATION':    'Approx. Location',
+    'ACCESS_BACKGROUND_LOCATION':'Background Location',
+    'READ_CONTACTS':             'Contacts',
+    'READ_CALL_LOG':             'Call Log',
+    'PROCESS_OUTGOING_CALLS':    'Outgoing Calls',
+    'READ_SMS':                  'Read SMS',
+    'SEND_SMS':                  'Send SMS',
+    'RECEIVE_SMS':               'Receive SMS',
+    'READ_PHONE_STATE':          'Phone State',
+    'CALL_PHONE':                'Make Calls',
+    'READ_EXTERNAL_STORAGE':     'Read Storage',
+    'WRITE_EXTERNAL_STORAGE':    'Write Storage',
+    'READ_MEDIA_IMAGES':         'Photos Access',
+    'READ_MEDIA_VIDEO':          'Video Access',
+    'READ_MEDIA_AUDIO':          'Audio Access',
+    'BODY_SENSORS':              'Body Sensors',
+    'BODY_SENSORS_BACKGROUND':   'Background Sensors',
+    'ACTIVITY_RECOGNITION':      'Activity Recognition',
+    'BLUETOOTH_SCAN':            'Nearby Devices (Scan)',
+    'BLUETOOTH_CONNECT':         'Nearby Devices (Connect)',
+    'BLUETOOTH_ADVERTISE':       'Nearby Devices (Advertise)',
+    'GET_ACCOUNTS':              'Account Access',
+    'INTERNET':                  'Internet',
+    'UWB_RANGING':               'UWB Ranging',
   };
 
-  // ── App Category definitions ──────────────────────────────────────────────
-  // Each category: package keywords → expected permissions (these DON'T add risk)
+  // ── App categories with EXPECTED permissions (don't penalise these) ────────
   static const _appCategories = <String, _AppCategory>{
     'camera': _AppCategory(
-      keywords: ['camera', 'photo', 'picture', 'selfie', 'snap', 'cam', 'gcam'],
-      expectedPerms: {'CAMERA', 'RECORD_AUDIO', 'READ_EXTERNAL_STORAGE',
-        'WRITE_EXTERNAL_STORAGE', 'ACCESS_FINE_LOCATION',
-        'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO'},
+      keywords: ['camera', 'photo', 'picture', 'selfie', 'snap', 'cam',
+        'gcam', 'opencamera'],
+      expectedPerms: {
+        'CAMERA', 'RECORD_AUDIO',
+        'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
+        'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE',
+        'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO', 'READ_MEDIA_AUDIO',
+        'INTERNET',
+      },
       label: 'Camera App',
     ),
     'maps': _AppCategory(
       keywords: ['maps', 'navigation', 'gps', 'waze', 'here', 'transit',
-        'directions', 'location', 'geo'],
-      expectedPerms: {'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
+        'directions', 'geo', 'mapmyindia', 'ola', 'uber'],
+      expectedPerms: {
+        'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
         'ACCESS_BACKGROUND_LOCATION', 'INTERNET',
-        'ACTIVITY_RECOGNITION'},
+        'ACTIVITY_RECOGNITION', 'READ_EXTERNAL_STORAGE',
+      },
       label: 'Navigation App',
     ),
     'music': _AppCategory(
-      keywords: ['music', 'spotify', 'player', 'audio', 'podcast', 'radio',
-        'soundcloud', 'youtube', 'media', 'song'],
-      expectedPerms: {'RECORD_AUDIO', 'READ_EXTERNAL_STORAGE', 'INTERNET',
-        'BLUETOOTH_CONNECT', 'READ_MEDIA_AUDIO'},
+      keywords: ['music', 'spotify', 'player', 'podcast', 'radio',
+        'soundcloud', 'youtube', 'media', 'gaana', 'jiosaavn',
+        'wynk', 'audiomack'],
+      expectedPerms: {
+        'RECORD_AUDIO', 'READ_EXTERNAL_STORAGE', 'INTERNET',
+        'BLUETOOTH_CONNECT', 'BLUETOOTH_SCAN',
+        'READ_MEDIA_AUDIO', 'READ_MEDIA_IMAGES',
+        'ACTIVITY_RECOGNITION',
+      },
       label: 'Media App',
     ),
     'voicerecorder': _AppCategory(
-      keywords: ['recorder', 'voice', 'dictaphone', 'memo', 'record'],
-      expectedPerms: {'RECORD_AUDIO', 'WRITE_EXTERNAL_STORAGE',
-        'READ_EXTERNAL_STORAGE'},
+      keywords: ['recorder', 'voice', 'dictaphone', 'memo', 'record',
+        'transcribe'],
+      expectedPerms: {
+        'RECORD_AUDIO', 'WRITE_EXTERNAL_STORAGE',
+        'READ_EXTERNAL_STORAGE', 'READ_MEDIA_AUDIO',
+      },
       label: 'Voice Recorder',
     ),
     'messaging': _AppCategory(
       keywords: ['whatsapp', 'telegram', 'signal', 'messenger', 'chat',
-        'sms', 'message', 'viber', 'line', 'skype'],
-      expectedPerms: {'CAMERA', 'RECORD_AUDIO', 'READ_CONTACTS', 'READ_SMS',
-        'SEND_SMS', 'ACCESS_FINE_LOCATION', 'INTERNET',
-        'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE',
-        'PROCESS_OUTGOING_CALLS', 'BLUETOOTH_CONNECT'},
+        'viber', 'line', 'skype', 'imo', 'snapchat', 'discord',
+        'message', 'sms', 'mms'],
+      expectedPerms: {
+        'CAMERA', 'RECORD_AUDIO', 'READ_CONTACTS',
+        'READ_SMS', 'SEND_SMS', 'RECEIVE_SMS',
+        'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
+        'INTERNET', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE',
+        'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO', 'READ_MEDIA_AUDIO',
+        'PROCESS_OUTGOING_CALLS', 'BLUETOOTH_CONNECT',
+        'READ_PHONE_STATE',
+      },
       label: 'Messaging App',
     ),
-    'contacts': _AppCategory(
-      keywords: ['contacts', 'dialer', 'phone', 'calls', 'truecaller'],
-      expectedPerms: {'READ_CONTACTS', 'WRITE_CONTACTS', 'READ_CALL_LOG',
-        'PROCESS_OUTGOING_CALLS', 'READ_PHONE_STATE',
-        'CALL_PHONE', 'INTERNET'},
-      label: 'Phone/Contacts App',
+    'phone': _AppCategory(
+      keywords: ['dialer', 'phone', 'calls', 'truecaller', 'contacts',
+        'caller', 'incall'],
+      expectedPerms: {
+        'READ_CONTACTS', 'READ_CALL_LOG', 'PROCESS_OUTGOING_CALLS',
+        'READ_PHONE_STATE', 'CALL_PHONE', 'INTERNET',
+        'READ_SMS', 'RECEIVE_SMS',
+      },
+      label: 'Phone/Dialer App',
     ),
     'email': _AppCategory(
-      keywords: ['gmail', 'email', 'mail', 'outlook', 'inbox', 'proton'],
-      expectedPerms: {'READ_CONTACTS', 'INTERNET', 'GET_ACCOUNTS',
-        'READ_EXTERNAL_STORAGE', 'CAMERA'},
+      keywords: ['gmail', 'email', 'mail', 'outlook', 'inbox',
+        'proton', 'yahoo', 'thunderbird'],
+      expectedPerms: {
+        'READ_CONTACTS', 'INTERNET', 'GET_ACCOUNTS',
+        'READ_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES',
+        'CAMERA',
+      },
       label: 'Email App',
     ),
     'social': _AppCategory(
-      keywords: ['instagram', 'facebook', 'twitter', 'tiktok', 'snapchat',
-        'linkedin', 'pinterest', 'reddit', 'social'],
-      expectedPerms: {'CAMERA', 'RECORD_AUDIO', 'READ_CONTACTS', 'INTERNET',
-        'ACCESS_FINE_LOCATION', 'READ_EXTERNAL_STORAGE',
-        'WRITE_EXTERNAL_STORAGE', 'ACTIVITY_RECOGNITION'},
+      keywords: ['instagram', 'facebook', 'twitter', 'tiktok', 'linkedin',
+        'pinterest', 'reddit', 'social', 'share', 'moj',
+        'josh', 'reels'],
+      expectedPerms: {
+        'CAMERA', 'RECORD_AUDIO', 'READ_CONTACTS', 'INTERNET',
+        'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
+        'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE',
+        'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO',
+        'ACTIVITY_RECOGNITION', 'BLUETOOTH_CONNECT',
+      },
       label: 'Social Media App',
     ),
     'fitness': _AppCategory(
       keywords: ['fitness', 'health', 'workout', 'steps', 'strava',
-        'pedometer', 'sport', 'run', 'gym'],
-      expectedPerms: {'BODY_SENSORS', 'ACTIVITY_RECOGNITION',
-        'ACCESS_FINE_LOCATION', 'INTERNET'},
+        'pedometer', 'sport', 'run', 'gym', 'yoga', 'garmin',
+        'fitbit', 'healthify'],
+      expectedPerms: {
+        'BODY_SENSORS', 'BODY_SENSORS_BACKGROUND',
+        'ACTIVITY_RECOGNITION', 'ACCESS_FINE_LOCATION', 'INTERNET',
+        'BLUETOOTH_SCAN', 'BLUETOOTH_CONNECT',
+      },
       label: 'Fitness App',
     ),
     'browser': _AppCategory(
       keywords: ['chrome', 'firefox', 'browser', 'opera', 'brave',
-        'safari', 'edge', 'uc'],
-      expectedPerms: {'INTERNET', 'READ_EXTERNAL_STORAGE',
-        'WRITE_EXTERNAL_STORAGE', 'ACCESS_FINE_LOCATION',
-        'CAMERA', 'RECORD_AUDIO'},
+        'edge', 'uc', 'dolphin', 'kiwi', 'via'],
+      expectedPerms: {
+        'INTERNET', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE',
+        'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
+        'CAMERA', 'RECORD_AUDIO', 'READ_MEDIA_IMAGES',
+      },
       label: 'Browser',
     ),
     'banking': _AppCategory(
-      keywords: ['bank', 'pay', 'wallet', 'finance', 'gpay', 'paytm',
-        'phonepe', 'amazon', 'cash'],
-      expectedPerms: {'CAMERA', 'USE_BIOMETRIC', 'INTERNET', 'READ_SMS',
-        'ACCESS_FINE_LOCATION', 'READ_PHONE_STATE'},
-      label: 'Finance App',
+      keywords: ['bank', 'gpay', 'paytm', 'phonepe', 'bhim', 'upi',
+        'wallet', 'finance', 'pay', 'cash', 'cred',
+        'mobikwik', 'freecharge'],
+      expectedPerms: {
+        'CAMERA', 'INTERNET', 'READ_SMS', 'RECEIVE_SMS',
+        'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
+        'READ_PHONE_STATE', 'GET_ACCOUNTS', 'READ_CONTACTS',
+        'READ_MEDIA_IMAGES',
+      },
+      label: 'Finance/Payment App',
     ),
     'scanner': _AppCategory(
-      keywords: ['scan', 'qr', 'barcode', 'document', 'ocr', 'pdf'],
-      expectedPerms: {'CAMERA', 'READ_EXTERNAL_STORAGE',
-        'WRITE_EXTERNAL_STORAGE'},
+      keywords: ['scan', 'qr', 'barcode', 'document', 'ocr', 'pdf',
+        'adobe', 'camscanner'],
+      expectedPerms: {
+        'CAMERA', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE',
+        'READ_MEDIA_IMAGES', 'INTERNET',
+      },
       label: 'Scanner App',
+    ),
+    'video': _AppCategory(
+      keywords: ['video', 'vlc', 'mx', 'player', 'stream', 'netflix',
+        'hotstar', 'prime', 'jio', 'zee5', 'sonyliv'],
+      expectedPerms: {
+        'INTERNET', 'READ_EXTERNAL_STORAGE', 'READ_MEDIA_VIDEO',
+        'READ_MEDIA_AUDIO', 'BLUETOOTH_CONNECT',
+        'ACTIVITY_RECOGNITION',
+      },
+      label: 'Video/Streaming App',
+    ),
+    'shopping': _AppCategory(
+      keywords: ['amazon', 'flipkart', 'myntra', 'shop', 'store',
+        'meesho', 'nykaa', 'ajio', 'zomato', 'swiggy'],
+      expectedPerms: {
+        'CAMERA', 'INTERNET', 'ACCESS_FINE_LOCATION',
+        'ACCESS_COARSE_LOCATION', 'READ_CONTACTS',
+        'READ_MEDIA_IMAGES', 'BLUETOOTH_CONNECT',
+      },
+      label: 'Shopping App',
     ),
   };
 
-  // ── Trusted system/Google packages ────────────────────────────────────────
-  static const _trustedPackagePrefixes = [
-    'com.google.',
-    'com.android.',
-    'android.',
-    'com.samsung.',
-    'com.oneplus.',
-    'com.miui.',
-    'com.xiaomi.',
-    'com.huawei.',
-    'com.oppo.',
-    'com.realme.',
-    'com.vivo.',
-    'com.motorola.',
-    'com.lge.',
-    'com.htc.',
-    'com.sony.',
-    'com.asus.',
-    'com.sec.',
+  // ── Known trusted package prefixes ────────────────────────────────────────
+  static const _trustedPrefixes = [
+    'com.google.', 'com.android.', 'android.',
+    'com.samsung.', 'com.sec.', 'com.oneplus.',
+    'com.miui.', 'com.xiaomi.', 'com.huawei.',
+    'com.oppo.', 'com.realme.', 'com.vivo.',
+    'com.motorola.', 'com.lge.', 'com.sony.',
+    'com.asus.', 'com.htc.', 'com.microsoft.',
   ];
 
   String permLabel(String raw) {
     final key = raw
         .replaceAll('android.permission.', '')
-        .replaceAll('com.android.voicemail.', '');
+        .toUpperCase();
     return _permLabels[key] ??
         key
             .replaceAll('_', ' ')
             .toLowerCase()
             .split(' ')
-            .map((w) => w.isNotEmpty ? w[0].toUpperCase() + w.substring(1) : '')
+            .map((w) => w.isNotEmpty
+            ? w[0].toUpperCase() + w.substring(1)
+            : '')
             .join(' ');
   }
 
-  // ── Detect app category from package name + app name ─────────────────────
-  _AppCategory? _detectCategory(String packageName, String appName) {
-    final searchStr = '${packageName.toLowerCase()} ${appName.toLowerCase()}';
+  _AppCategory? _detectCategory(String pkg, String name) {
+    final search = '${pkg.toLowerCase()} ${name.toLowerCase()}';
     for (final entry in _appCategories.entries) {
-      for (final keyword in entry.value.keywords) {
-        if (searchStr.contains(keyword)) return entry.value;
+      for (final kw in entry.value.keywords) {
+        if (search.contains(kw)) return entry.value;
       }
     }
     return null;
   }
 
-  // ── Check if package is a trusted system app ──────────────────────────────
-  bool _isTrustedPackage(String packageName) {
-    return _trustedPackagePrefixes.any((p) => packageName.startsWith(p));
-  }
+  bool _isTrusted(String pkg) =>
+      _trustedPrefixes.any((p) => pkg.startsWith(p));
 
   // ── Main analysis ─────────────────────────────────────────────────────────
   AppRiskInfo analyzeApp({
@@ -195,85 +291,78 @@ class PermissionAuditorService {
     required String appName,
     required List<String> permissions,
   }) {
+    // Normalise to uppercase, strip prefix
     final perms = permissions
-        .map((p) => p.replaceAll('android.permission.', '').toUpperCase())
+        .map((p) => p
+        .replaceAll('android.permission.', '')
+        .toUpperCase())
         .toList();
 
     final hasInternet = perms.contains('INTERNET');
     final hasCamera   = perms.contains('CAMERA');
     final hasMic      = perms.contains('RECORD_AUDIO');
     final hasLocation = perms.contains('ACCESS_FINE_LOCATION') ||
-        perms.contains('ACCESS_COARSE_LOCATION');
-    final hasSms      = perms.contains('READ_SMS');
+        perms.contains('ACCESS_COARSE_LOCATION') ||
+        perms.contains('ACCESS_BACKGROUND_LOCATION');
+    final hasSms      = perms.contains('READ_SMS') ||
+        perms.contains('RECEIVE_SMS');
     final hasContacts = perms.contains('READ_CONTACTS');
     final hasCallLog  = perms.contains('READ_CALL_LOG');
 
-    // ── Detect category & trusted status ─────────────────────────────────
-    final category       = _detectCategory(packageName, appName);
-    final isTrustedPkg   = _isTrustedPackage(packageName);
-    final expectedPerms  = category?.expectedPerms ?? <String>{};
+    final category    = _detectCategory(packageName, appName);
+    final isTrusted   = _isTrusted(packageName);
+    final expected    = category?.expectedPerms ?? <String>{};
 
-    // ── Score only UNEXPECTED dangerous permissions ───────────────────────
     int score = 0;
     final riskyPerms   = <String>[];
     final explanations = <String>[];
 
+    // ── Score only UNEXPECTED dangerous permissions ───────────────────────
     for (final p in perms) {
       final pts = _dangerousPerms[p] ?? 0;
       if (pts <= 0) continue;
+      if (expected.contains(p)) continue; // expected → not risky
 
-      // Skip if this permission is expected for the app's category
-      if (expectedPerms.contains(p)) continue;
-
-      // Trusted system apps get a 50% score reduction
-      final adjustedPts = isTrustedPkg ? (pts * 0.5).round() : pts;
-      score += adjustedPts;
+      final adjusted = isTrusted ? (pts * 0.5).round() : pts;
+      score += adjusted;
       riskyPerms.add(permLabel(p));
     }
 
-    // ── Combo multipliers (only for unexpected combos) ────────────────────
-    final camExpected = expectedPerms.contains('CAMERA');
-    final micExpected = expectedPerms.contains('RECORD_AUDIO');
-    final locExpected = expectedPerms.contains('ACCESS_FINE_LOCATION') ||
-        expectedPerms.contains('ACCESS_COARSE_LOCATION');
-    final smsExpected = expectedPerms.contains('READ_SMS');
-    final conExpected = expectedPerms.contains('READ_CONTACTS');
-    final calExpected = expectedPerms.contains('READ_CALL_LOG');
-
+    // ── Combo multipliers (only for UNEXPECTED combos) ────────────────────
     if (hasInternet) {
-      if (hasCamera && !camExpected) {
+      if (hasCamera   && !expected.contains('CAMERA')) {
         score += 20;
         explanations.add('Camera + Internet → can silently upload photos/video');
       }
-      if (hasMic && !micExpected) {
+      if (hasMic      && !expected.contains('RECORD_AUDIO')) {
         score += 20;
         explanations.add('Microphone + Internet → can stream audio remotely');
       }
-      if (hasLocation && !locExpected) {
+      if (hasLocation && !expected.contains('ACCESS_FINE_LOCATION') &&
+          !expected.contains('ACCESS_COARSE_LOCATION')) {
         score += 15;
-        explanations.add('Location + Internet → real-time location tracking possible');
+        explanations.add('Location + Internet → real-time tracking possible');
       }
-      if (hasSms && !smsExpected) {
+      if (hasSms      && !expected.contains('READ_SMS')) {
         score += 20;
-        explanations.add('SMS Access + Internet → can exfiltrate OTP codes');
+        explanations.add('SMS + Internet → can exfiltrate OTP codes');
       }
-      if (hasContacts && !conExpected) {
+      if (hasContacts && !expected.contains('READ_CONTACTS')) {
         score += 10;
         explanations.add('Contacts + Internet → address book can be uploaded');
       }
-      if (hasCallLog && !calExpected) {
+      if (hasCallLog  && !expected.contains('READ_CALL_LOG')) {
         score += 15;
         explanations.add('Call Log + Internet → call history exposure risk');
       }
     }
 
-    // Trusted packages get overall score capped lower
-    if (isTrustedPkg) score = (score * 0.6).round();
+    if (isTrusted) score = (score * 0.6).round();
     score = score.clamp(0, 100);
 
-    // ── Determine trust label ─────────────────────────────────────────────
+    // ── Trust label ───────────────────────────────────────────────────────
     final TrustLabel trustLabel;
-    if (isTrustedPkg) {
+    if (isTrusted) {
       trustLabel = TrustLabel.trusted;
     } else if (perms.isEmpty ||
         perms.every((p) => (_dangerousPerms[p] ?? 0) == 0)) {
@@ -284,20 +373,20 @@ class PermissionAuditorService {
       trustLabel = TrustLabel.watch;
     }
 
-    // ── Risk level ────────────────────────────────────────────────────────
-    final riskLevel = score >= 65 ? 'high' : score >= 35 ? 'medium' : 'low';
+    final riskLevel =
+    score >= 65 ? 'high' : score >= 35 ? 'medium' : 'low';
 
     // ── Explanation ───────────────────────────────────────────────────────
     String explanation;
     if (explanations.isNotEmpty) {
       explanation = explanations.first;
     } else if (category != null && riskyPerms.isEmpty) {
-      explanation =
-      '${category.label} — permissions match expected usage';
-    } else if (isTrustedPkg) {
+      explanation = '${category.label} — all permissions match expected usage';
+    } else if (isTrusted) {
       explanation = 'System/trusted app — risk adjusted accordingly';
     } else if (riskyPerms.isNotEmpty) {
-      explanation = 'Requests ${riskyPerms.take(3).join(', ')} permissions';
+      explanation =
+      'Has unexpected: ${riskyPerms.take(2).join(', ')}';
     } else {
       explanation = 'No dangerous permissions detected';
     }
@@ -316,7 +405,6 @@ class PermissionAuditorService {
   }
 }
 
-// ── Internal category model ───────────────────────────────────────────────────
 class _AppCategory {
   final List<String> keywords;
   final Set<String> expectedPerms;
@@ -334,12 +422,13 @@ final demoApps = [
     'package': 'com.google.android.camera',
     'name':    'Camera',
     'perms':   ['CAMERA', 'RECORD_AUDIO', 'ACCESS_FINE_LOCATION',
-      'WRITE_EXTERNAL_STORAGE'],
+      'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO', 'INTERNET'],
   },
   {
     'package': 'com.flashlight.suspicious',
     'name':    'FlashLight Pro',
-    'perms':   ['CAMERA', 'INTERNET', 'READ_CONTACTS', 'ACCESS_FINE_LOCATION'],
+    'perms':   ['CAMERA', 'INTERNET', 'READ_CONTACTS',
+      'ACCESS_FINE_LOCATION'],
   },
   {
     'package': 'com.weather.basic',
@@ -353,9 +442,11 @@ final demoApps = [
       'READ_CONTACTS'],
   },
   {
-    'package': 'com.google.android.maps',
-    'name':    'Maps & Navigation',
-    'perms':   ['ACCESS_FINE_LOCATION', 'INTERNET', 'CAMERA'],
+    'package': 'com.google.android.apps.maps',
+    'name':    'Maps',
+    'perms':   ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
+      'INTERNET', 'CAMERA', 'RECORD_AUDIO',
+      'READ_EXTERNAL_STORAGE'],
   },
   {
     'package': 'com.notes.simple',
@@ -381,7 +472,8 @@ final demoApps = [
   {
     'package': 'com.whatsapp',
     'name':    'WhatsApp',
-    'perms':   ['CAMERA', 'RECORD_AUDIO', 'READ_CONTACTS', 'READ_SMS',
-      'INTERNET', 'ACCESS_FINE_LOCATION'],
+    'perms':   ['CAMERA', 'RECORD_AUDIO', 'READ_CONTACTS',
+      'READ_SMS', 'INTERNET', 'ACCESS_FINE_LOCATION',
+      'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO'],
   },
 ];

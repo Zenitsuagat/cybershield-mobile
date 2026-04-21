@@ -7,15 +7,21 @@ class ScoreRing extends StatelessWidget {
   final int score;
   final double size;
   final String? label;
+  // Override auto color — pass stateColor from home dashboard so that
+  // low security score shows red, not green
+  final Color? colorOverride;
 
   const ScoreRing({
     super.key,
     required this.score,
     this.size = 120,
     this.label,
+    this.colorOverride,
   });
 
   Color get _color {
+    if (colorOverride != null) return colorOverride!;
+    // Default: higher = more dangerous (URL threat score)
     if (score >= 70) return kAccentRed;
     if (score >= 35) return kAccentAmber;
     return kAccentGreen;

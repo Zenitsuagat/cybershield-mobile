@@ -7,7 +7,7 @@ import '../services/permission_auditor_service.dart';
 import '../widgets/common_widgets.dart';
 
 class PermissionAuditorScreen extends StatefulWidget {
-  final void Function(int riskyCount)? onAuditComplete;
+  final void Function(int highCount, int mediumCount)? onAuditComplete;
   const PermissionAuditorScreen({super.key, this.onAuditComplete});
 
   @override
@@ -92,7 +92,7 @@ class _PermissionAuditorScreenState extends State<PermissionAuditorScreen> {
       _usingRealData = realData;
     });
 
-    widget.onAuditComplete?.call(_highCount + _mediumCount);
+    widget.onAuditComplete?.call(_highCount, _mediumCount);
   }
 
   // ── Open Android app settings for a specific package ─────────────────────
@@ -196,7 +196,7 @@ class _PermissionAuditorScreenState extends State<PermissionAuditorScreen> {
         boxShadow: [BoxShadow(color: color.withOpacity(0.07), blurRadius: 20)],
       ),
       child: Row(children: [
-        ScoreRing(score: score, size: 90, label: 'PRIVACY'),
+        ScoreRing(score: score, size: 90, label: 'PRIVACY', colorOverride: color),
         const SizedBox(width: 20),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
             children: [
